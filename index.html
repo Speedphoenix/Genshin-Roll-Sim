@@ -9,14 +9,22 @@
 		self.onmessage = function(e) {
 			var rateUps = 0;
 			var others = 0;
-			var c = [0, 0, 0, 0, 0, 0, 0];
+			var fourRateUps = 0;
+			var fourOthers = 0;
+			var threeCount = 0;
 			for (var i = 0; i < e.data.simulations; i++) {
-				var roll = simulateOne(e.data.rolls, e.data.pityCounter, e.data.guaranteedRateUp);
+				var roll = simulateOne(
+					e.data.rolls,
+					e.data.pityCounter,
+					e.data.guaranteedRateUp,
+					e.data.fourPityCounter,
+					e.data.guaranteedFourRateUp
+				);
 				rateUps += roll.rateUps;
 				others += roll.others;
-				if (roll.rateUps > 0) {
-					c[Math.min(roll.rateUps - 1, 6)] += 1;
-				}
+				fourRateUps += roll.fourRateUps;
+				fourOthers += roll.fourOthers;
+				threeCount += roll.threeCount;
 				if (i % (e.data.simulations / 100) == 0) {
 					postMessage({
 						progress: i
@@ -24,20 +32,29 @@
 				}
 			}
 			postMessage({
-				rateUps: rateUps,
-				others: others,
-				c: c
+				rateUps,
+				others,
+				fourRateUps,
+				fourOthers,
+				threeCount,
 			});
 		};
 
-		function simulateOne(rolls, pityCounter, guaranteedRateUp) {
+		function simulateOne(rolls, pityCounter, guaranteedRateUp, fourPityCounter, guaranteedFourRateUp) {
 			var rateUps = 0;
 			var others = 0;
+			var fourRateUps = 0;
+			var fourOthers = 0;
+			var threeCount = 0;
 			for (var i = 0; i < rolls; i++) {
 				pityCounter++;
+				fourPityCounter++;
 				var chance = pityCounter < 76 ? 0.006 : 0.324;
-				if (Math.random() < chance || pityCounter > 89) {
+				var fourChance = 0.051; // Don't take any 4* soft pity into account
+				var rndResult = Math.random();
+				if (rndResult < chance || pityCounter >= 90) {
 					pityCounter = 0;
+					fourPityCounter = 0;
 					if (guaranteedRateUp || Math.random() < 0.5) {
 						rateUps++;
 						guaranteedRateUp = false;
@@ -45,11 +62,25 @@
 						others++;
 						guaranteedRateUp = true;
 					}
+				} else if (rndResult < fourChance || fourPityCounter >= 10) {
+					fourPityCounter = 0;
+					if (guaranteedFourRateUp || Math.random() < 0.5) {
+						fourRateUps++;
+						guaranteedFourRateUp = false;
+					} else {
+						fourOthers++;
+						guaranteedFourRateUp = true;
+					}
+				} else {
+					threeCount++;
 				}
 			}
 			return {
-				rateUps: rateUps,
-				others: others
+				rateUps,
+				others,
+				fourRateUps,
+				fourOthers,
+				threeCount,
 			};
 		}
 	</script>
@@ -67,7 +98,8 @@
 			var primogems = Number(document.getElementById("primogems").value);
 			var fates = Number(document.getElementById("fates").value);
 			var pityCounter = Number(document.getElementById("pity").value);
-			if (isNaN(primogems) || isNaN(fates) || isNaN(pityCounter)) {
+			var fourPityCounter = Number(document.getElementById("fourPity").value);
+			if (isNaN(primogems) || isNaN(fates) || isNaN(pityCounter) || isNaN(fourPityCounter)) {
 				document.getElementById("progress").innerHTML = "<p style='color:red'>Invalid inputs</p>";
 				return;
 			}
@@ -79,12 +111,15 @@
 			worker.onmessage = update;
 
 			var guaranteedRateUp = document.getElementById("guaranteed").checked
+			var guaranteedFourRateUp = document.getElementById("fourGuaranteed").checked
 			var rolls = primogems / 160 + fates;
 			worker.postMessage({
-				rolls: rolls,
-				pityCounter: pityCounter,
-				guaranteedRateUp: guaranteedRateUp,
-				simulations: simulations
+				rolls,
+				pityCounter,
+				guaranteedRateUp,
+				simulations: simulations,
+				fourPityCounter,
+				guaranteedFourRateUp,
 			});
 		}
 
@@ -95,17 +130,11 @@
 			}
 			document.getElementById("progress").innerHTML = "Simulation complete";
 
-			var c = e.data.c;
 			document.getElementById("total").innerHTML = ((e.data.rateUps + e.data.others) / simulations).toFixed(2);
 			document.getElementById("rateUp").innerHTML = (e.data.rateUps / simulations).toFixed(2);
-
-			document.getElementById("c0").innerHTML = ((c[0] + c[1] + c[2] + c[3] + c[4] + c[5] + c[6]) / simulations * 100).toFixed(2) + "%";
-			document.getElementById("c1").innerHTML = ((c[1] + c[2] + c[3] + c[4] + c[5] + c[6]) / simulations * 100).toFixed(2) + "%";
-			document.getElementById("c2").innerHTML = ((c[2] + c[3] + c[4] + c[5] + c[6]) / simulations * 100).toFixed(2) + "%";
-			document.getElementById("c3").innerHTML = ((c[3] + c[4] + c[5] + c[6]) / simulations * 100).toFixed(2) + "%";
-			document.getElementById("c4").innerHTML = ((c[4] + c[5] + c[6]) / simulations * 100).toFixed(2) + "%";
-			document.getElementById("c5").innerHTML = ((c[5] + c[6])/ simulations * 100).toFixed(2) + "%";
-			document.getElementById("c6").innerHTML = (c[6] / simulations * 100).toFixed(2) + "%";
+			document.getElementById("totalFour").innerHTML = ((e.data.fourRateUps + e.data.fourOthers) / simulations).toFixed(2);
+			document.getElementById("rateUpFour").innerHTML = (e.data.fourRateUps / simulations).toFixed(2);
+			document.getElementById("threeCount").innerHTML = (e.data.threeCount / simulations).toFixed(2);
 		}
 	</script>
 </head>
@@ -122,6 +151,12 @@
 		<div class="form-check mt-4">
 			<input type="checkbox" class="form-check-input" id="guaranteed">
 			<label class="form-check-label" for="guaranteed">My next 5* is guaranteed to be a rate up characater</label>
+		</div>
+		<label for="fourPity" class="form-label mt-4">4* pity counter (amount of rolls you made since your last 4*)</label>
+		<input type="text" class="form-control w-25" id="fourPity" value="0">
+		<div class="form-check mt-4">
+			<input type="checkbox" class="form-check-input" id="fourGuaranteed">
+			<label class="form-check-label" for="fourguaranteed">My next 4* is guaranteed to be a rate up characater</label>
 		</div>
 		<button type="button" class="btn btn-primary mt-4" onclick="simulate()">Simulate</button>
 		<div id="progress" class="mt-4">This page will run 1,000,000 simulations</div>
@@ -144,33 +179,16 @@
 				<td id="rateUp"></td>
 			</tr>
 			<tr>
-				<th scope="row">Chance of getting C0 rate-up character</th>
-				<td id="c0"></td>
+				<th scope="row">Average number of 4* characters and weapons</th>
+				<td id="totalFour"></td>
 			</tr>
 			<tr>
-				<th scope="row">Chance of getting C1 rate-up character</th>
-				<td id="c1"></td>
+				<th scope="row">Average number of rate-up 4* characters</th>
+				<td id="rateUpFour"></td>
 			</tr>
 			<tr>
-				<th scope="row">Chance of getting C2 rate-up character</th>
-				<td id="c2"></td>
-			</tr>
-			<tr>
-				<th scope="row">Chance of getting C3 rate-up character</th>
-				<td id="c3"></td>
-				<td id="c3c"></td>
-			</tr>
-			<tr>
-				<th scope="row">Chance of getting C4 rate-up character</th>
-				<td id="c4"></td>
-			</tr>
-			<tr>
-				<th scope="row">Chance of getting C5 rate-up character</th>
-				<td id="c5"></td>
-			</tr>
-			<tr>
-				<th scope="row">Chance of getting C6 rate-up character</th>
-				<td id="c6"></td>
+				<th scope="row">Average number of 3* weapons</th>
+				<td id="threeCount"></td>
 			</tr>
 			</tbody>
 		</table>
